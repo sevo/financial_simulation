@@ -1,0 +1,187 @@
+model: #model settings
+  num_of_agents:
+    normal: 100
+    anomaly: 20
+  step_length:
+    package: datetime
+    funcname: timedelta
+    kwargs:
+      seconds: 100
+  nonsch_tr_proba:
+    #nonschedulable transactions with their probabilities defined
+    DEPOSIT : 0.1
+    WITHDRAWAL : 0.2
+    TRANSFER : 0.7
+  sch_tr_proba:
+    #schedulable transactions with their probabilities defined
+    INKASO : 0.5
+    ABP : 0.5
+  starttime: #beginning time for the model
+    year : 2017
+    month : 2
+    day : 10
+BAF_normal_agent:
+  # BAF = bank agent factory
+  # settings for creating a normal agent in the BAF
+  num_friendly_accounts_range: #range for number of friendly accounts
+    from : 4
+    to : 18
+  num_friendly_accounts_prob: 
+  #probabilities (or weights) for the numbers in that range
+  #there must be the same amount of numbers as there are in the range
+    - 10
+    - 15
+    - 15
+    - 15
+    - 20
+    - 40
+    - 80
+    - 80
+    - 80
+    - 40
+    - 20
+    - 20
+    - 20
+    - 10
+  friendly_prob:
+    #probabilities for interacting with a friendly agent after we have
+    #generated a list of friendly agent ID's
+    package: scipy.stats
+    funcname: dirichlet
+    args: #list of parameters (no keyword parameters)
+      - np.ones(dct["num_of_friendly"])
+    kwargs: {} #dictionary with "key:value"-type parameters
+    args_for_eval : #which arguments (by index) need eval-ing
+      - 0 #eval the first argument
+    kwargs_for_eval : [] # which keyword arguments (by key) need evaling
+  agent_nonsch_tr_prob:
+    package: scipy.stats
+    funcname: dirichlet
+    args: #list of parameters (no keyword parameters)
+      - dct["nonscheduled_tr_probas"]
+    kwargs: {} #dictionary with "key:value"-type parameters
+    args_for_eval : #which arguments (by index) need eval-ing
+      - 0
+    kwargs_for_eval : [] # which keyword arguments (by key) need evaling
+  scheduled_tr:
+    #settings for scheduled transactions
+    num_scheduled : 
+      #number of scheduled transactions
+      package: numpy.random
+      funcname: randint
+      args:
+        - 7
+    inkaso_amount:
+      #amount for inkaso transactions
+      package: numpy.random
+      funcname: normal
+      args:
+        - 50 #mean
+        - 7 #std
+    abp_amount:
+      #amount for abp transactions
+      package: numpy.random
+      funcname: normal
+      args:
+        - 200 #mean
+        - 30 #std
+    start_day:
+      #start day for scheduled transactions, defined by time passed from the beginning time specified
+      days: 
+        package: numpy.random
+        funcname: randint
+        args:
+          - 0 #low
+          - 91 #high
+      hours: 0
+      minutes: 0
+      seconds: 0
+    periodicity:
+      #how often should the transaction happen - specify the period
+      days:
+        package: numpy.random
+        funcname: randint
+        args:
+          - 20 #low
+          - 31 #high
+      hours: 0
+      minutes: 0
+      seconds: 0
+  semischeduled_tr:
+    #settings for semischeduled transactions
+    num_semischeduled:
+      #number of semischeduled transactions
+      package: numpy.random
+      funcname: randint
+      args:
+        - 5
+    amount:
+      #amount for the transactions
+      package: scipy.stats
+      funcname: norm
+      args:
+        - 50 #mean
+        - 7 #std
+    days_histogram:
+      #settings for random variable generated from histogram distribution
+      #for the days when the transaction should have probability
+      #higher than 0 that it will be executed
+      low_day:
+        #lowest day when the probability shouldn't be zero
+        package: numpy.random
+        funcname: randint
+        args:
+          - 1 #low
+          - 12 #high
+      high_day:
+        #highest day when the probability should be one
+        package: numpy.random
+        funcname: randint
+        args:
+          - 13
+          - 28
+      std: 1 #st.deviation - only to say how much the probability is scattered 
+      #into the days -- the bigger the std the more uniform the probabilities will be
+    periodicity:
+      #how often does the transaction happen (specified in days for now)
+      days:
+        package: numpy.random
+        funcname: randint
+        args:
+          - 1
+          - 100
+      hours: 0
+      minutes: 0
+      seconds: 0
+  random_tr:
+    num_random:
+      #number of random transactions
+      package: numpy.random
+      funcname: randint
+      args:
+        - 5
+    # mean_for_distrib:
+    #   package: numpy.random
+    #   funcname: normal
+    #   args:
+    #     - 4.5 #mean
+    #     - 0.5 #std
+    # sigma_for_distrib:
+    #   package: numpy.random
+    #   funcname: normal
+    #   args:
+    #     - 1.5 #mean
+    #     - 0.2 #std
+    trans_distrib:
+      #distribution for amount from which we will sample
+      package: scipy.stats
+      funcname: lognorm
+      kwargs:
+        s: np.random.normal(1.5,0.2) #sigma or std
+        scale: np.exp(np.random.normal(4.5,0.5)) #mean
+      kwargs_for_eval:
+        - s
+        - scale
+    one_step_probability: 0.001 # probability of executing a random transaction in one step of the simulation
+
+
