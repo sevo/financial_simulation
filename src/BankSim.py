@@ -179,8 +179,123 @@ class RandomScheduler(Scheduler):
 
 ################################################### small stuff-end ###################################################
 
+class AccountGenerator:
+    __next_id=0
+
+    def get_unique_ID():
+        AccountGenerator.__next_id+=1
+        return AccountGenerator.__next_id
+
+class Distribution:
+    def __init__(self,random_var):
+        """
+        Args:
+            random_var (scipy.stats.*) : a random variable (we mainly expect it to be from package `scipy.stats`),
+                supporting function `rvs()`.
+        """
+        self.random_var = random_var
+
+    def sample(self,size=1):
+        """
+        Args:
+            size (int) : specify the size of the returned array of samples from the distribution
+        """
+        #IMPORTANT! allow size to be more so that this thing can be easily used for arbitrary long sizes
+        if size == 1:
+            return self.random_var.rvs()
+        elif size>1:
+            return self.random_var.rvs(size=size)
+        else:
+            raise ValueError("Wrong value for parameter: size.")
+
+class ExactAmount(Distribution):
+    def __init__(self,exact_var):
+        self.exact_var=exact_var
+
+    def sample(self,size=1):
+        if size==1:
+            return self.exact_var
+        elif size > 1:
+            return np.array([self.exact_var for _ in range(size)])
+        else:
+            raise ValueError("Wrong value for parameter: size.")
 
 
+class DistributionOfDistributions():
+    def __init__(self,distribution_class,distribution_param_list):
+        """
+        Distribution for generating distributions of a certain determined type (determined by distribution_func)
+        Args:
+            distribution_class (str) : a string containing the full path to the desired function. For example you can
+                specify path to uniform random variable from scipy stats like this `scipy.stats.uniform`.
+            distribution_param_list (list(Distribution)) : list of `Distribution` objects, each of which corresponds to
+                a parameter that the distribution_class function should be instantiated with.
+        """
+        self.distribution_module=distribution_class[:distribution_class.rindex('.')]
+        self.distribution_class=distribution_class[distribution_class.rindex('.')+1:]
+        self.distribution_param_list=distribution_param_list
+    
+    def sample_distribution(self,size=1):
+        """
+        Should return an object of type `Distribution`. This method instantiates the class specified in constructor called
+            `distribution_class`.
+        Args:
+            size (int) : how many `Distribution` objects we wish to get
+        """
+        imported_module = importlib.import_module(self.distribution_module)
+        function=getattr(imported_module,self.distribution_class)
+        result_distributions=[]
+        for i in range(size):
+            args=[d.sample() for d in self.distribution_param_list]
+            result_distributions.append(function(*args)) #function(*args,**kwargs)
+
+        if size == 1:
+            return result_distributions[0]
+        elif size > 1:
+            return result_distributions
+        else:
+            raise ValueError("Wrongly specified size. Size must be greater than zero!")
+
+class ConnectionGenerator(metaclass=ABCMeta):
+
+    @abstractmethod
+    def generate_connections(self,num_connections,agents):
+        """
+        Generate `num_connections` amount of connections between agents in the list `agents`.
+        Args:
+            num_connections (int) : number of connections to generate
+            agents (list(Agent)) : list of agents between which the connections should be generated
+        Returns a list of connections.
+        """
+        pass
+    
+class RandomConnectionGenerator(ConnectionGenerator):
+    """
+    Generates random connections between agents.
+    """
+    def __init__(self, probability_distribution):
+        """
+        Args:
+            probability_distribution (Distribution) : The probability distribution from which we will generate probabilities
+                of agents executing a transaction between each other.
+        """
+        self.probability_distribution=probability_distribution
+    
+    def generate_connections(self,num_connections,agents):
+        """
+        Args:
+            num_of_connections (int) : how many connections to generate
+            agents (BankAgent) : list of agents that we want to generate the connections between
+        """
+        connections = []
+        
+        origins=np.random.choice(agents, num_connections, replace=True)
+        targets=np.random.choice(agents, num_connections, replace=True)
+        probabilities=self.probability_distribution.sample(size=num_connections)
+        #generate the connections
+        for i in range(num_connections):
+            connections.append(Connection(origins[i],probabilities[i],targets[i]))
+        return connections
 
 class Connection:
     def __init__(self,origin,probability,target):
@@ -193,15 +308,18 @@ class Connection:
             target (BankAgent) : the target agent (where the money goes to)
         """
         self.origin=origin
+        if (0<=probability<=1) == False:
+            raise ValueError("Probability of connection should be in range 0 <= prob <= 1")
         self.probability=probability
         self.target=target
+        
 
-class ConnectionToOperationTransformer:
+class ConnectionToOperationTransformer(metaclass=ABCMeta):
     """
-    Transforms `Connection` into `Operation`. Agents have a list of `Operation` objects which they should execute.
+    Abstract class.
+    Transforms every `Connection` into `Operation`. Agents have a list of `Operation` objects which they should execute.
     """
-    __metaclass__ = ABCMeta
-    
+
     def __init__(self,amount_distribution,timing_distribution):
         """
         Args:
@@ -216,12 +334,11 @@ class ConnectionToOperationTransformer:
         raise NotImplementedError #method not implemented
 
 
-class Operation:
+class Operation(metaclass=ABCMeta):
     """
     General abstract class for representing an operation that will generate a bank transaction when it occurs.
     Actual implementation classes that represent different types of operations should implement this class.
     """
-    __metaclass__ = ABCMeta
     
     def __init__(self,connection):
         self.connection=connection
@@ -268,10 +385,13 @@ class RandomOperation(Operation):
         return None
 
 
-class Scheduler:
+class Scheduler(metaclass=ABCMeta):
     """General scheduler class."""
+    @abstractmethod
     def add(self,Agent):
         pass
+
+    @abstractmethod
     def step(self,stepcount):
         pass
     
@@ -280,7 +400,6 @@ class RandomScheduler(Scheduler):
     Random scheduler.
     """
     def __init__():
-        self.super()
         self.agents=[]
         
     def add(self,Agent):
@@ -350,7 +469,7 @@ class BankAgent(Agent):
         self.model.transactions.extend(executed_transactions)
 
 
-class BankModel(Model):
+class BankModel(Model,metaclass=ABCMeta):
     """
     A bank model which serves the purpose of a simulator class.
     """
@@ -379,6 +498,18 @@ class BankModel(Model):
         self.initialized = False
         self.agents=set()
     
+    @abstractmethod
+    def generate_agents():
+        pass
+
+    @abstractmethod
+    def generate_connections():
+        pass
+
+    @abstractmethod
+    def generate_operations():
+        pass
+
     def add_agent(Agent):
         self.agents.add(Agent)
         self.schedule.add(Agent)
