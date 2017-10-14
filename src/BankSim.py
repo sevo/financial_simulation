@@ -178,7 +178,28 @@ class RandomScheduler(Scheduler):
             agents[index].step(stepcount)
 
 ################################################### small stuff-end ###################################################
+
+
+
+
+class Connection:
+    def __init__(self,origin,probability,target):
+        """
+        Args:
+            origin (BankAgent) : the origin agent (where the money comes from)
+            probability (float) : the probability which says how likely it is that this connection going to be used.
+                This probability can/should be used when transforming the `Connection` to an `RandomTimeOperation`, but
+                probably not when transforming into a `ScheduledOperation`.
+            target (BankAgent) : the target agent (where the money goes to)
+        """
+        self.origin=origin
+        self.probability=probability
+        self.target=target
+
 class ConnectionToOperationTransformer:
+    """
+    Transforms `Connection` into `Operation`. Agents have a list of `Operation` objects which they should execute.
+    """
     __metaclass__ = ABCMeta
     
     def __init__(self,amount_distribution,timing_distribution):
@@ -187,9 +208,12 @@ class ConnectionToOperationTransformer:
             amount_distribution (DistributionOfDistributions) : ...
             timing_distribution (DistributionOfTimingDistributions) : ...
         """
-        
+        self.amount_distribution=amount_distribution
+        self.timing_distribution=timing_distribution
+
     @abstractmethod
-    def transform(self,connections): raise NotImplementedError #method not implemented
+    def transform(self,connections): 
+        raise NotImplementedError #method not implemented
 
 
 class Operation:
@@ -199,11 +223,14 @@ class Operation:
     """
     __metaclass__ = ABCMeta
     
+    def __init__(self,connection):
+        self.connection=connection
+
     @abstractmethod
     def execute(self,stepcount): raise NotImplementedError #implemented method should return bool
         
 class ScheduledOperation(Operation):
-    def __init__(self,start,end,amount_distribution,time_distribution):
+    def __init__(self,connection,start,end,amount_distribution,time_distribution):
         """
         Args:
             start (int): ...

@@ -19,7 +19,8 @@ class TimeRepresentation:
 
 class Cron(TimeRepresentation):
     """
-    Class for representing cron times.
+    Class for representing cron times. This class is meant to be used when we can be certain that on certain days
+    or in certain times, the transaction should be executing. 
     Note:
         The package we use for cron parsing (cronex) supports using repeaters (for periodicity). 
         To use repeater put '%number' in expression.
@@ -61,7 +62,10 @@ class Cron(TimeRepresentation):
 class TimeDistribution(TimeRepresentation):
     """
     Class for representing time distributions by using different granularities of time.
-    The specified granularities used are : month, day, hour and minute.
+    The specified granularities used are : month, day, hour and minute. This class is meant to be used when 
+    we want to define the time for transaction's execution as a probability on a certain day. 
+    TODO: Afaik there is no way to specify that the probability of transaction to execute should increase
+    with the time getting later and later.. is that okay?
     TODO: Implement weekday granularity. 
     TODO: Implement some form of counter? maxcount? for a period of time
     """
