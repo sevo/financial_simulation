@@ -14,6 +14,40 @@ import importlib
 from abc import ABCMeta, abstractmethod
 
 ################################################### globals ###################################################
+class StepTime():
+    """Class for converting time to number of steps for simulator"""
+    #we can define our own kind of "imaginary time" where we can define our own rules such as all months have 30 days 
+    def __init__(self,step_length):
+        """
+        Args:
+            step_length (timedelta) : model's step_length specified by the timedelta type
+        """
+        self.step_length = step_length #is of type timedelta
+        self.total_seconds = step_length.total_seconds()
+        self.second = 1 / self.total_seconds
+        self.minute = 60 / self.total_seconds
+        self.hour = 3600 / self.total_seconds
+        self.day = (24 * 3600) / self.total_seconds
+        self.week = 7*(24 * 3600) / self.total_seconds
+
+    def time_to_steps(self,days,hours=0,minutes=0,seconds=0):
+        """Return the closest possible time in number of steps (round always to nearest larger integer)
+        
+        Args:
+            days (int) : how many days to convert to steps 
+            hours (int) : how many ours to convert to steps
+            minutes (int) : how many minutes to convert to steps
+            seconds (int) : how many minutes to convert to steps
+        """
+        return math.ceil(days*self.day + hours * self.hour + minutes * self.minute + seconds * self.second)
+        
+    def timedelta_to_steps(td):
+        pass
+
+stepcount=0
+steptime=None
+current_timestamp=None
+
 def load_config(path):
     # Read YAML file and return the config
     with open(path, 'r') as stream:
@@ -123,35 +157,9 @@ class Transaction():
         """Creates dictionary for a transaction which will then be used for creating a dataframe of transactions"""
         return dict((key, value) for key, value in self.__dict__.items() if not key in ["day_scheduled","sender","receiver"])
 
-class StepTime():
-    """Class for converting time to number of steps for simulator"""
-    #we can define our own kind of "imaginary time" where we can define our own rules such as all months have 30 days 
-    def __init__(self,step_length):
-        """
-        Args:
-            step_length (timedelta) : model's step_length specified by the timedelta type
-        """
-        self.step_length = step_length #is of type timedelta
-        self.total_seconds = step_length.total_seconds()
-        self.second = 1 / self.total_seconds
-        self.minute = 60 / self.total_seconds
-        self.hour = 3600 / self.total_seconds
-        self.day = (24 * 3600) / self.total_seconds
-        self.week = 7*(24 * 3600) / self.total_seconds
+
         
-    def time_to_steps(self,days,hours=0,minutes=0,seconds=0):
-        """Return the closest possible time in number of steps (round always to nearest larger integer)
-        
-        Args:
-            days (int) : how many days to convert to steps 
-            hours (int) : how many ours to convert to steps
-            minutes (int) : how many minutes to convert to steps
-            seconds (int) : how many minutes to convert to steps
-        """
-        return math.ceil(days*self.day + hours * self.hour + minutes * self.minute + seconds * self.second)
-        
-    def timedelta_to_steps(td):
-        pass
+
 
 
 class Scheduler:
@@ -340,18 +348,23 @@ class Operation(metaclass=ABCMeta):
     Actual implementation classes that represent different types of operations should implement this class.
     """
     
-    def __init__(self,connection):
-        self.connection=connection
+    def __init__(self):
+        pass
 
     @abstractmethod
     def execute(self,stepcount): raise NotImplementedError #implemented method should return bool
         
 class ScheduledOperation(Operation):
-    def __init__(self,connection,start,end,amount_distribution,time_distribution):
+    # what we need for this class is to be able to generate transactions
+    # transactions need to have the following:
+    # sender, receiver, tr_type, amount, timestamp, step_count.. the timestamp isnt really necessary
+    # but the other things are
+
+    def __init__(self,sender,receiver,tr_type,start,end,amount_distribution,time_distribution):
         """
         Args:
-            start (int): ...
-            end (int): ...
+            start (datetime): the starting timestamp of doing these transactions
+            end (datetime): timestamp after which no transactions should be made
             amount_distribution (Distribution): ...
             time_distribution (TimeRepresentation): ...
         """
@@ -359,30 +372,39 @@ class ScheduledOperation(Operation):
         self.end=end
         self.amount_distribution=amount_distribution
         self.time_distribution=time_distribution
+        self.sender=sender
+        self.receiver=receiver
+        self.tr_type=tr_type
         
-    def execute(self,stepcount):
-        if self.start <= stepcount <= self.end:
+    def execute(self,timestamp):
+        global stepcount
+        transactions=[] #only for providing compatibility
+        if self.start <= timestamp <= self.end:
             # we are in the interval for which the operation should be executable
             # we will probably need to turn the stepcount into a datetime
-            if self.time_distribution.evaluate(stepcount) == True: # the operation should be executed on this stepcount
+            if self.time_distribution.evaluate(timestamp) == True: # the operation should be executed on this stepcount
                 amount=self.amount_distribution.sample()
-                # now let's create a transaction... but we don't have info about origin and target accounts..
-                return transaction
-        return None
+                transactions.append(Transaction(self.sender,self.receiver,self.tr_type,amount,timestamp,stepcount))
+        return transactions # return list of zero or one transaction(s)
     
 class RandomOperation(Operation):
-    def __init__(self, friends_distributions_of_amount,friends_list,friends_probabilities):
-        self.friends_distributions_of_amount=friends_distributions_of_amount
+    def __init__(self, sender,tr_type,friends_distributions_of_amount,friends_list,friends_probabilities):
+        self.friends_distributions_of_amount=friends_distributions_of_amount #asi typu DistributionOfDistributions?
         self.friends_list=friends_list
         self.friends_probabilities=friends_probabilities
-    def execute(self,stepcount):
-        for index,target in enumerate(friends_list):
+        self.tr_type=tr_type
+        self.sender=sender
+
+    def execute(self,timestamp):
+        global stepcount
+        transactions=[]
+        for index,receiver in enumerate(self.friends_list):
             if random.random() <= self.friends_probabilities[index]:
                 #probability requirement is satisfied
                 amount=self.friends_distributions_of_amount[index].sample()
                 #create transaction
-                return transaction
-        return None
+                transactions.append(Transaction(self.sender,receiver,self.tr_type,amount,timestamp,stepcount))
+        return transactions
 
 
 class Scheduler(metaclass=ABCMeta):
@@ -399,7 +421,7 @@ class RandomScheduler(Scheduler):
     """
     Random scheduler.
     """
-    def __init__():
+    def __init__(self):
         self.agents=[]
         
     def add(self,Agent):
@@ -408,7 +430,7 @@ class RandomScheduler(Scheduler):
     def step(self,stepcount):
         perm=np.random.permutation(len(self.agents))
         for index in perm:
-            agents[index].step(stepcount)
+            self.agents[index].step(stepcount)
 
 
 
@@ -444,7 +466,7 @@ class BankAgent(Agent):
         """
         return float("%.2f" % amount)
         
-    def add_operation(operation):
+    def add_operation(self,operation):
         self.operations.append(operation)
         
     def step(self,stepcount):
@@ -456,15 +478,18 @@ class BankAgent(Agent):
         Raises:
             SimulatorError : error raised if there is not enough agents to do meaningful transactions with
         """
+        # TODO: think about sending the stepcount to the agent and what we really want to use..
+        # so far there is disconnect between somewhere using stepcount, and somewhere using timestamp
+        # should be unified
         if len(self.model.schedule.agents) < 2:
             raise SimulatorError('We need atleast two agents to make meaningful transactions')
         
         executed_transactions = []
+        global current_timestamp
         for operation in self.operations:
-            transaction=operation.execute(stepcount)
+            transactions=operation.execute(current_timestamp)
              #when an operation executes, it should create an executed transaction in the bank
-            if transaction != None:
-                executed_transactions.append(transaction)
+            executed_transactions.extend(transactions)
         
         self.model.transactions.extend(executed_transactions)
 
@@ -491,27 +516,30 @@ class BankModel(Model,metaclass=ABCMeta):
         """
         cfg = config["model"]
         self.step_length = step_length
-        self.schedule = RandomActivation(self)
+        self.schedule = RandomScheduler()#RandomActivation(self)
+        self.step_count=0
         starttime=cfg["starttime"]
         self.time = datetime.datetime(year=starttime["year"],month=starttime["month"],day=starttime["day"],hour=8,minute=0)
         self.transactions=[] # list of all transactions
         self.initialized = False
-        self.agents=set()
+        self.agents=list() # probably better to be a list than a set
+        global steptime
+        steptime=StepTime(self.step_length)
     
     @abstractmethod
-    def generate_agents():
+    def generate_agents(self):
         pass
 
     @abstractmethod
-    def generate_connections():
+    def generate_connections(self):
         pass
 
     @abstractmethod
-    def generate_operations():
+    def generate_operations(self):
         pass
 
-    def add_agent(Agent):
-        self.agents.add(Agent)
+    def add_agent(self,Agent):
+        self.agents.append(Agent)
         self.schedule.add(Agent)
 
     #do one step of simulation, doing what we want to do at each step + calling agent's step functions using scheduler.step()
@@ -519,9 +547,17 @@ class BankModel(Model,metaclass=ABCMeta):
         """
         Model's step function that is supposed to run the logic performed at each step of the simulator.
         """
-        self.schedule.step()
+        global stepcount, current_timestamp
+        if self.step_count == 0: #initialization of these variables
+            stepcount=self.step_count
+            current_timestamp=self.time
+
+        self.schedule.step(stepcount)
         self.time+=self.step_length #we will increase the time after each step by the timedelta specified in model's constructor
         self.step_count+=1
+        stepcount=self.step_count
+        current_timestamp=self.time
+
     
     #run the model, parameter: number of steps to execute
     def run_model(self,num_of_steps):

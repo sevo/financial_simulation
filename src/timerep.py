@@ -216,8 +216,8 @@ class TimeDistribExp(TimeRepresentation):
     __days=list(range(1,32))
     __hours=list(range(0,24))
     __minutes=list(range(0,60))
-    __timetypes={"month":TimeDistribExp.__months,"day":TimeDistribExp.__days,
-                   "hour":TimeDistribExp.__hours,"minute":TimeDistribExp.__minutes}
+    __timetypes={"month":__months,"day":__days,
+                   "hour":__hours,"minute":__minutes}
 
     def crange(start, stop, modulo):
         """
