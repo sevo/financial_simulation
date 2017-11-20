@@ -352,7 +352,7 @@ class Operation(metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    def execute(self,stepcount): raise NotImplementedError #implemented method should return bool
+    def execute(self,timestamp,stepcount): raise NotImplementedError #implemented method should return bool
         
 class ScheduledOperation(Operation):
     # what we need for this class is to be able to generate transactions
@@ -376,8 +376,7 @@ class ScheduledOperation(Operation):
         self.receiver=receiver
         self.tr_type=tr_type
         
-    def execute(self,timestamp):
-        global stepcount
+    def execute(self,timestamp,stepcount):
         transactions=[] #only for providing compatibility
         if self.start <= timestamp <= self.end:
             # we are in the interval for which the operation should be executable
@@ -395,8 +394,8 @@ class RandomOperation(Operation):
         self.tr_type=tr_type
         self.sender=sender
 
-    def execute(self,timestamp):
-        global stepcount
+    def execute(self,timestamp,stepcount):
+        print ("ROP: global stepcount = {}".format(stepcount))
         transactions=[]
         for index,receiver in enumerate(self.friends_list):
             if random.random() <= self.friends_probabilities[index]:
@@ -427,10 +426,10 @@ class RandomScheduler(Scheduler):
     def add(self,Agent):
         self.agents.append(Agent)
     
-    def step(self,stepcount):
+    def step(self,current_timestamp,stepcount):
         perm=np.random.permutation(len(self.agents))
         for index in perm:
-            self.agents[index].step(stepcount)
+            self.agents[index].step(current_timestamp,stepcount)
 
 
 
@@ -469,7 +468,7 @@ class BankAgent(Agent):
     def add_operation(self,operation):
         self.operations.append(operation)
         
-    def step(self,stepcount):
+    def step(self,current_timestamp,stepcount):
         """
         Agent step function. Called at every step of the model (when the model's step function is called).
         This function calls the method ``execute`` on every operation that is associated with the agent.
@@ -485,9 +484,9 @@ class BankAgent(Agent):
             raise SimulatorError('We need atleast two agents to make meaningful transactions')
         
         executed_transactions = []
-        global current_timestamp
+        # global current_timestamp
         for operation in self.operations:
-            transactions=operation.execute(current_timestamp)
+            transactions=operation.execute(current_timestamp,stepcount)
              #when an operation executes, it should create an executed transaction in the bank
             executed_transactions.extend(transactions)
         
@@ -552,7 +551,7 @@ class BankModel(Model,metaclass=ABCMeta):
             stepcount=self.step_count
             current_timestamp=self.time
 
-        self.schedule.step(stepcount)
+        self.schedule.step(current_timestamp,stepcount)
         self.time+=self.step_length #we will increase the time after each step by the timedelta specified in model's constructor
         self.step_count+=1
         stepcount=self.step_count
