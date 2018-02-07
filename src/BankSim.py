@@ -90,6 +90,33 @@ def get_time_from_cfg(cfg):
     "seconds":get_cfg_func_result(cfg["seconds"],{})}
     return timelength
 
+def amount_2decimal(amount):
+    """Usually generated floats can be generated up to many decimal places. We just need two. Convert to 2 decimal places.
+    
+    Args:
+        amount (float) : transaction amount, but can be any float that we want to convert to only 2 decimal places
+    """
+    return float("%.2f" % amount)
+
+def update_agents_balances(sender, receiver, tr_type, amount):
+    """
+    Updates the balances of both the sender agent and the receiver agent.
+    """
+    if tr_type == TransactionType.DEPOSIT:
+        receiver.balance += amount
+        if sender != receiver:
+            sender.balance -= amount
+    if tr_type == TransactionType.WITHDRAWAL:
+        if sender != receiver :
+            raise ValueError("Error while updating agents' balances. The transaction type is Withdrawal and sender =/= receiver.")
+        sender.balance -= amount
+    if tr_type == TransactionType.TRANSFER:
+        if sender == receiver:
+            raise ValueError("Error while updating agents' balances. The transaction type is Transfer and sender == receiver.")
+        sender.balance -= amount
+        receiver.balance += amount
+
+
 ################################################### globals-end ###################################################
 
 ################################################### small stuff ###################################################
@@ -130,6 +157,8 @@ class Transaction():
     """
     Class which represents a single transaction, which should equal one row in a dataframe.
     """
+    ID = 1
+
     def __init__(self,sender, receiver, tr_type, amount, timestamp, step_count):
         """
         Args:
@@ -152,14 +181,12 @@ class Transaction():
         self.step_count = step_count
         self.sender_label = self.sender.label
         self.receiver_label = self.receiver.label
+        self.transaction_id = Transaction.ID
+        Transaction.ID += 1
         
     def to_dict(self):
         """Creates dictionary for a transaction which will then be used for creating a dataframe of transactions"""
         return dict((key, value) for key, value in self.__dict__.items() if not key in ["day_scheduled","sender","receiver"])
-
-
-        
-
 
 
 class Scheduler:
@@ -295,10 +322,29 @@ class RandomConnectionGenerator(ConnectionGenerator):
             num_of_connections (int) : how many connections to generate
             agents (BankAgent) : list of agents that we want to generate the connections between
         """
+
+        # check if we have atleast 2 agents to generate connections with
+        if len(agents) < 2:
+            return list()
         connections = []
         
         origins=np.random.choice(agents, num_connections, replace=True)
         targets=np.random.choice(agents, num_connections, replace=True)
+        origins = origins.tolist()
+        targets = targets.tolist()
+        # this implementation creates a problem if agent in origin and target is the same.. need to check for that and
+        # treat this unwanted situation
+        # if somebody wants to create connections where sender == receiver, they should create their own connection generator
+        for ind in range(len(origins)):
+            if origins[ind] == targets[ind]: # we have a situation where sender and receiver will be the same
+                new_agent = origins[ind]
+                while new_agent == origins[ind]:
+                    new_agent = np.random.choice(agents, 1, replace=True)
+                if np.random.uniform() <= 0.5: # the agent will change in origin list
+                    origins[ind] = new_agent[0]
+                else: # the agent will change in target list
+                    targets[ind] = new_agent[0]
+
         probabilities=self.probability_distribution.sample(size=num_connections)
         #generate the connections
         for i in range(num_connections):
@@ -383,6 +429,7 @@ class ScheduledOperation(Operation):
             # we will probably need to turn the stepcount into a datetime
             if self.time_distribution.evaluate(timestamp) == True: # the operation should be executed on this stepcount
                 amount=self.amount_distribution.sample()
+                amount = amount_2decimal(amount)
                 transactions.append(Transaction(self.sender,self.receiver,self.tr_type,amount,timestamp,stepcount))
         return transactions # return list of zero or one transaction(s)
     
@@ -395,12 +442,12 @@ class RandomOperation(Operation):
         self.sender=sender
 
     def execute(self,timestamp,stepcount):
-        print ("ROP: global stepcount = {}".format(stepcount))
         transactions=[]
         for index,receiver in enumerate(self.friends_list):
             if random.random() <= self.friends_probabilities[index]:
                 #probability requirement is satisfied
                 amount=self.friends_distributions_of_amount[index].sample()
+                amount = amount_2decimal(amount)
                 #create transaction
                 transactions.append(Transaction(self.sender,receiver,self.tr_type,amount,timestamp,stepcount))
         return transactions
@@ -435,7 +482,7 @@ class RandomScheduler(Scheduler):
 
 class BankAgent(Agent):
     """ An agent generating transactions."""
-    def __init__(self, unique_id, model, account_number, name, balance, bank_country,bank_name):
+    def __init__(self, unique_id, model, account_number, name, balance, agent_country,bank_name):
         """
         Args:
             unique_id (int): unique_id of the agent, needed for mesa Agent type
@@ -449,21 +496,13 @@ class BankAgent(Agent):
         super().__init__(unique_id, model)
         self.name = name
         self.balance = balance
-        self.bank_country = bank_country
+        self.agent_country = agent_country
         self.bank_name = bank_name
         self.operations = []
         
     def set_label(self,label):
         """This method sets the agent's label (normal,fraudster)."""
         self.label=label
-    
-    def amount_2decimal(self,amount):
-        """Usually generated floats can be generated up to many decimal places. We just need two. Convert to 2 decimal places.
-        
-        Args:
-            amount (float) : transaction amount, but can be any float that we want to convert to only 2 decimal places
-        """
-        return float("%.2f" % amount)
         
     def add_operation(self,operation):
         self.operations.append(operation)
@@ -489,7 +528,7 @@ class BankAgent(Agent):
             transactions=operation.execute(current_timestamp,stepcount)
              #when an operation executes, it should create an executed transaction in the bank
             executed_transactions.extend(transactions)
-        
+
         self.model.transactions.extend(executed_transactions)
 
 
@@ -575,11 +614,12 @@ class BankModel(Model,metaclass=ABCMeta):
         for _ in range(num_of_steps):
             self.step()
     
-    def transactions_to_df(self):
+    def transactions_to_df(self,specified_cols):
         #we have a custom column order
         """
         Create a ``pandas`` dataframe from existing Transaction objects in ``model.transactions`` list variable.
         For this dataframe we have specified a custom column ordering inside the function.
+        specified_cols (list(str)) : list of columns that should be in the dataframe
         """
         transdict={}
         counter=1
@@ -588,10 +628,13 @@ class BankModel(Model,metaclass=ABCMeta):
             counter+=1
         df = pd.DataFrame.from_dict(transdict,orient='index')
         cols = df.columns.tolist()
-        custom_cols = ['sender_name','receiver_name','tr_type','amount','timestamp','sender_id','receiver_id','step_count']
-        for col in cols: #in case there will be additional columns which we don't yet know about
-            if col not in custom_cols:
-                custom_cols.append(col)
+        if specified_cols != None:
+            custom_cols = specified_cols
+        else:
+            custom_cols = ['sender_name','receiver_name','tr_type','amount','timestamp','sender_id','receiver_id','step_count']
+            for col in cols: #in case there will be additional columns which we don't yet know about
+                if col not in custom_cols:
+                    custom_cols.append(col)
         df = df[custom_cols]
         return df
 
